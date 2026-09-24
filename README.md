@@ -7,7 +7,8 @@ target `hash160`:
 
 - **`mnemonic_search.cu`** — random BIP39 mnemonics (12 or 24 words) → BIP32 HD derivation
 - **`armory_search.cu`** — random 32-byte seeds → Armory's pre-BIP32 sequential derivation
-- **`casascius_search.cu`** — random passphrases → Casascius Bulk Address Utility's key formula
+- **`casascius_search.cu`** — random passphrases → Casascius Bulk Address Utility's key formula, masked (puzzle-series targets)
+- **`casascius_search_nomask.cu`** — same formula, unmasked, tests indices `n=1..10` per passphrase (any Bitcoin address)
 
 All three share the same secp256k1 engine (Jacobian coordinates + a
 secp256k1-specific fast field reduction; `mnemonic_search` and
@@ -71,26 +72,39 @@ source code (`Walletgen.cs`) — `PrivKey = SHA256(n + "/" + passphrase
 tool's UI (this implementation accepts any `n`, since the puzzle
 context calls for indices beyond that original 1–10 range).
 
+### `casascius_search_nomask.cu`
+
+Same formula as above, but for testing against **any** Bitcoin
+address rather than puzzle-series ones specifically: no mask is
+applied, and — matching the *original* tool's own behavior, which
+always generates 10 keys per passphrase rather than taking an
+external index — every attempt tests all `n=1` through `n=10` for
+each random passphrase, comparing each raw derived key's `hash160`
+directly against the target.
+
 ## About the mask
 
 `P[n] = 2^(n-1) | (K mod 2^(n-1))` reflects a specific, publicly
 documented pattern used by the "Bitcoin puzzle" transaction series:
 private keys constrained to fall within `[2^(n-1), 2^n)` for a chosen
-`n`. All three tools were originally built to test whether Electrum
-1.x, BIP32/BIP39, Armory, or Casascius-style deterministic key
-generation could plausibly explain those specific keys, validating
-candidate seeds against the already-solved puzzles in that series.
-Strip the mask out (use the raw derived key directly) to search for an
-arbitrary target instead.
+`n`. `mnemonic_search`, `armory_search`, and `casascius_search` all
+apply this mask, and so are specifically for testing puzzle-series
+targets. `casascius_search_nomask` applies no mask and works against
+**any** Bitcoin `hash160` — use it if your target isn't part of that
+puzzle series (e.g. an address you found elsewhere with no known
+bit-range constraint; there is no way to infer such a constraint from
+a `hash160` alone, since hashing destroys any relationship to the
+underlying key's magnitude).
 
 ## Build
 
 Requires the CUDA toolkit (`nvcc`) and an NVIDIA GPU.
 
 ```bash
-nvcc -O3 -arch=sm_75 mnemonic_search.cu  -o mnemonic_search
-nvcc -O3 -arch=sm_75 armory_search.cu    -o armory_search
-nvcc -O3 -arch=sm_75 casascius_search.cu -o casascius_search
+nvcc -O3 -arch=sm_75 mnemonic_search.cu          -o mnemonic_search
+nvcc -O3 -arch=sm_75 armory_search.cu            -o armory_search
+nvcc -O3 -arch=sm_75 casascius_search.cu         -o casascius_search
+nvcc -O3 -arch=sm_75 casascius_search_nomask.cu  -o casascius_search_nomask
 ```
 
 Adjust `-arch=sm_75` to match your GPU's compute capability
@@ -100,9 +114,10 @@ Adjust `-arch=sm_75` to match your GPU's compute capability
 ## Usage
 
 ```bash
-./mnemonic_search  <target_hash160_hex_40chars> <puzzle_index> <12|24> [total_threads_per_batch]
-./armory_search    <target_hash160_hex_40chars> <puzzle_index> [total_threads_per_batch]
-./casascius_search <target_hash160_hex_40chars> <puzzle_index> [total_threads_per_batch]
+./mnemonic_search          <target_hash160_hex_40chars> <puzzle_index> <12|24> [total_threads_per_batch]
+./armory_search            <target_hash160_hex_40chars> <puzzle_index> [total_threads_per_batch]
+./casascius_search         <target_hash160_hex_40chars> <puzzle_index> [total_threads_per_batch]
+./casascius_search_nomask  <target_hash160_hex_40chars> [total_threads_per_batch]
 ```
 
 All three run **indefinitely**, launching batches with a new random
